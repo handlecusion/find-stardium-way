@@ -8,6 +8,8 @@ SEAT_POINTS = [
     (402, 584), (380, 564), (365, 539), (346, 514), (330, 488), (322, 460),
     (317, 430), (312, 399), (312, 376), (311, 344)
 ]
+# 영역 당 관중 수 설정
+NUM_PEOPLE_PER_SEAT = 50
 
 def draw_seat_points(screen):
     # 점이 보이지 않는 문제는 draw_seat_points 함수가 실제로 호출되지 않거나,
@@ -33,12 +35,14 @@ class Person:
         self.joined_path = False  # 경로에 합류했는지 여부
         self.target_exit_index = None  # 목표 출구 인덱스
 
-    def update(self, path_points, exit_points):
+    def update(self, path_points, exit_points, people):
         if self.escaped:
             return
             
         # 아직 경로에 합류하지 않았다면 가장 가까운 경로 지점으로 이동
         if not self.joined_path:
+            # 경로에 합류하기 전에는 초록색으로 표시
+            self.color = (0, 255, 0)
             if self.path_index < len(path_points):
                 target = path_points[self.path_index]
                 dx = target[0] - self.x
@@ -70,6 +74,31 @@ class Person:
                 target_path_index = i
                 break
         
+        # 현재 경로 인덱스에 있는 사람 수 계산
+        people_at_same_index = 0
+        for person in people:
+            if not person.escaped and person.joined_path and person.path_index == self.path_index:
+                people_at_same_index += 1
+        
+        # 겹치는 사람이 있으면 속도 조절 (각 인덱스별 최대 용량에 따라)
+        current_speed = self.speed
+        
+        # path_index가 유효한 범위인지 확인
+        if 0 <= self.path_index < len(PATH_CAPACITIES):
+            max_capacity = PATH_CAPACITIES[self.path_index]
+            
+            if people_at_same_index >= max_capacity:
+                current_speed = self.speed * 0.7
+                self.color = (255, 0, 0)  # 빨간색으로 변경
+            elif people_at_same_index == 2:
+                current_speed = self.speed * 0.9
+                self.color = (255, 165, 0)  # 주황색으로 변경
+            else:
+                self.color = (0, 255, 0)  # 초록색으로 변경
+        else:
+            # path_index가 범위를 벗어나면 초록색으로 설정
+            self.color = (0, 255, 0)
+        
         # 목표 출구 방향으로 경로 따라 이동
         if target_path_index is not None:
             if self.path_index < target_path_index:
@@ -79,12 +108,12 @@ class Person:
                     dx = target[0] - self.x
                     dy = target[1] - self.y
                     dist = (dx ** 2 + dy ** 2) ** 0.5
-                    if dist < self.speed:
+                    if dist < current_speed:
                         self.x, self.y = target
                         self.path_index += 1
                     else:
-                        self.x += self.speed * dx / dist
-                        self.y += self.speed * dy / dist
+                        self.x += current_speed * dx / dist
+                        self.y += current_speed * dy / dist
             elif self.path_index > target_path_index:
                 # 목표 출구 방향으로 이동 (인덱스 감소)
                 if self.path_index > 0:
@@ -92,12 +121,12 @@ class Person:
                     dx = target[0] - self.x
                     dy = target[1] - self.y
                     dist = (dx ** 2 + dy ** 2) ** 0.5
-                    if dist < self.speed:
+                    if dist < current_speed:
                         self.x, self.y = target
                         self.path_index -= 1
                     else:
-                        self.x += self.speed * dx / dist
-                        self.y += self.speed * dy / dist
+                        self.x += current_speed * dx / dist
+                        self.y += current_speed * dy / dist
             else:
                 # 목표 출구에 도달
                 self.escaped = True
@@ -137,6 +166,11 @@ PATH_POINTS = [
     (810, 543), (832, 526), (846, 511), (864, 487), (876, 469), (889, 445),
     (897, 420), (906, 397), (912, 370), (913, 346)
 ]
+
+# 각 경로 인덱스별 최대 용량 설정 (랜덤하게 2명 또는 3명)
+PATH_CAPACITIES = []
+for _ in range(len(PATH_POINTS)):
+    PATH_CAPACITIES.append(random.randint(2, 3))
 import sys
 def print_click_pos(event):
     if event.type == pygame.MOUSEBUTTONDOWN:
@@ -166,7 +200,7 @@ def main():
     running = True
     
     # 관중 생성 (각 좌석마다 100명)
-    people = spawn_people(100)
+    people = spawn_people(NUM_PEOPLE_PER_SEAT)
 
     # 문제 원인: 클릭 좌표를 출력하는 print_click_pos 함수가 main 루프에서 호출되지 않음
     # 해결: 이벤트 루프에서 MOUSEBUTTONDOWN 이벤트 발생 시 print_click_pos 호출
@@ -187,7 +221,7 @@ def main():
         
         # 관중들 업데이트 및 그리기
         for person in people:
-            person.update(PATH_POINTS, EXIT_POINTS)
+            person.update(PATH_POINTS, EXIT_POINTS, people)
             person.draw(screen)
 
         # 왼쪽 상단에 현재 필드에 존재하는 관중 수 표시

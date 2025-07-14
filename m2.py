@@ -113,7 +113,7 @@ class Person:
     def __init__(self, x, y, start_delay=0):
         self.x = x
         self.y = y
-        self.radius = 2
+        self.radius = 5
         self.color = (255, 100, 0)
         self.original_speed = 0.2  # 픽셀당 속도를 0.2로 설정
         self.speed = self.original_speed  # 현재 속도
@@ -126,21 +126,123 @@ class Person:
         self.start_delay = start_delay  # 출발 지연 시간 (초)
         self.start_time = None  # 실제 출발 시간
         self.started = False  # 출발했는지 여부
+        self.last_collision_time = 0  # 마지막 충돌 시간
+        self.collision_display_duration = 1000  # 충돌 표시 지속 시간 (밀리초)
+        self.optimized_path = []  # 최적화된 경로
+        self.avoidance_vector = [0, 0]  # 회피 벡터
+        self.waiting_at_exit = False  # 출구 앞 대기 상태
 
-    def handle_collisions(self, all_people):
-        """다른 관중들과의 충돌 감지 및 속도 감소"""
+    def handle_collisions(self, all_people, current_time):
+        """다른 관중들과의 충돌 감지 및 위치 조정"""
         collision_detected = False
+        min_distance = float('inf')
+        closest_person = None
+        
+        # 가장 가까운 사람 찾기
         for other in all_people:
             if other != self and not other.escaped:
                 distance = ((self.x - other.x) ** 2 + (self.y - other.y) ** 2) ** 0.5
+                if distance < min_distance:
+                    min_distance = distance
+                    closest_person = other
+                
                 if distance < 1:  # 충돌 감지 거리를 1로 변경
                     collision_detected = True
                     self.collision_count += 1  # 충돌 횟수 증가
-                    break
-        if collision_detected:
+        
+        if collision_detected and closest_person:
+            # 충돌이 감지되면 위치 조정
+            self.adjust_position(closest_person, all_people)
             self.speed = max(0.06, self.original_speed * 0.3)  # 원래 속도의 30%로 감소 (최소 0.06)
+            self.last_collision_time = current_time  # 충돌 시간 기록
         else:
             self.speed = self.original_speed  # 원래 속도로 복구
+    
+    def adjust_position(self, closest_person, all_people):
+        """충돌을 피하기 위해 위치를 조정합니다."""
+        # 현재 위치에서 8방향으로 시도 (상, 하, 좌, 우, 대각선)
+        directions = [
+            (0, -1), (0, 1), (-1, 0), (1, 0),  # 상하좌우
+            (-1, -1), (-1, 1), (1, -1), (1, 1)  # 대각선
+        ]
+        
+        original_x, original_y = self.x, self.y
+        best_x, best_y = self.x, self.y
+        min_collision_distance = 0
+        
+        # 각 방향으로 위치 조정 시도
+        for dx, dy in directions:
+            test_x = original_x + dx
+            test_y = original_y + dy
+            
+            # 이 위치에서 다른 사람들과의 최소 거리 계산
+            min_dist = float('inf')
+            collision_free = True
+            
+            for other in all_people:
+                if other != self and not other.escaped:
+                    dist = ((test_x - other.x) ** 2 + (test_y - other.y) ** 2) ** 0.5
+                    if dist < 1:  # 여전히 충돌
+                        collision_free = False
+                        break
+                    min_dist = min(min_dist, dist)
+            
+            # 충돌이 없고, 더 멀리 떨어진 위치를 선택
+            if collision_free and min_dist > min_collision_distance:
+                min_collision_distance = min_dist
+                best_x, best_y = test_x, test_y
+        
+        # 최적의 위치로 이동
+        self.x, self.y = best_x, best_y
+    
+    def calculate_avoidance_vector(self, all_people):
+        """다른 사람들을 피하기 위한 회피 벡터를 계산합니다."""
+        avoidance_x, avoidance_y = 0, 0
+        nearby_count = 0
+        
+        for other in all_people:
+            if other != self and not other.escaped:
+                distance = ((self.x - other.x) ** 2 + (self.y - other.y) ** 2) ** 0.5
+                if distance < 10 and distance > 0:  # 10픽셀 이내의 사람들
+                    # 거리가 가까울수록 강한 회피력
+                    force = (10 - distance) / 10
+                    dx = self.x - other.x
+                    dy = self.y - other.y
+                    # 정규화
+                    length = (dx ** 2 + dy ** 2) ** 0.5
+                    if length > 0:
+                        avoidance_x += (dx / length) * force
+                        avoidance_y += (dy / length) * force
+                        nearby_count += 1
+        
+        if nearby_count > 0:
+            # 평균 회피 벡터 계산
+            self.avoidance_vector = [avoidance_x / nearby_count, avoidance_y / nearby_count]
+        else:
+            self.avoidance_vector = [0, 0]
+    
+    def find_optimal_exit(self, exit_points, all_people):
+        """가장 효율적인 출구를 선택합니다."""
+        best_exit = 0
+        min_congestion = float('inf')
+        
+        for i, exit_point in enumerate(exit_points):
+            # 해당 출구로 향하는 사람 수 계산
+            people_heading_to_exit = 0
+            for person in all_people:
+                if person != self and not person.escaped and person.target_exit_index == i:
+                    people_heading_to_exit += 1
+            
+            # 출구까지의 거리와 혼잡도를 고려한 점수 계산
+            distance = ((self.x - exit_point[0]) ** 2 + (self.y - exit_point[1]) ** 2) ** 0.5
+            congestion_factor = people_heading_to_exit * 5  # 혼잡도 가중치
+            total_score = distance + congestion_factor
+            
+            if total_score < min_congestion:
+                min_congestion = total_score
+                best_exit = i
+        
+        return best_exit
 
     def update(self, path_points, exit_points, all_people, current_time):
         if self.escaped:
@@ -155,7 +257,95 @@ class Person:
             else:
                 return  # 아직 출발하지 않음
         
-        self.handle_collisions(all_people)
+        # 최적화된 탈출 알고리즘 사용 여부 확인
+        if OPTIMIZED_ESCAPE:
+            self.update_optimized(path_points, exit_points, all_people, current_time)
+        else:
+            self.update_basic(path_points, exit_points, all_people, current_time)
+    
+    def update_optimized(self, path_points, exit_points, all_people, current_time):
+        """최적화된 탈출 알고리즘"""
+        self.handle_collisions(all_people, current_time)
+        
+        # 회피 벡터 계산
+        self.calculate_avoidance_vector(all_people)
+        
+        # 최적 출구 선택 (주기적으로 재계산)
+        if self.target_exit_index is None or current_time % 1000 < 50:  # 1초마다 재계산
+            self.target_exit_index = self.find_optimal_exit(exit_points, all_people)
+        
+        # 아직 경로에 합류하지 않았다면 가장 가까운 경로 지점으로 이동
+        if not self.joined_path:
+            if self.path_index < len(path_points):
+                target = path_points[self.path_index]
+                dx = target[0] - self.x
+                dy = target[1] - self.y
+                
+                # 회피 벡터 적용
+                dx += self.avoidance_vector[0] * 0.3
+                dy += self.avoidance_vector[1] * 0.3
+                
+                dist = (dx ** 2 + dy ** 2) ** 0.5
+                if dist < self.speed:
+                    self.x, self.y = target
+                    self.joined_path = True
+                    self.path_index += 1
+                else:
+                    self.x += self.speed * dx / dist
+                    self.y += self.speed * dy / dist
+            return
+        
+        # 목표 출구 인덱스에 해당하는 PATH_POINTS 인덱스 찾기
+        target_exit = exit_points[self.target_exit_index]
+        target_path_index = None
+        for i, (px, py) in enumerate(path_points):
+            if (px, py) == target_exit:
+                target_path_index = i
+                break
+        
+        # 목표 출구 방향으로 경로 따라 이동
+        if target_path_index is not None:
+            if self.path_index < target_path_index:
+                if self.path_index < len(path_points):
+                    target = path_points[self.path_index]
+                    dx = target[0] - self.x
+                    dy = target[1] - self.y
+                    
+                    # 회피 벡터 적용
+                    dx += self.avoidance_vector[0] * 0.3
+                    dy += self.avoidance_vector[1] * 0.3
+                    
+                    dist = (dx ** 2 + dy ** 2) ** 0.5
+                    if dist < self.speed:
+                        self.x, self.y = target
+                        self.path_index += 1
+                    else:
+                        self.x += self.speed * dx / dist
+                        self.y += self.speed * dy / dist
+            elif self.path_index > target_path_index:
+                if self.path_index > 0:
+                    target = path_points[self.path_index - 1]
+                    dx = target[0] - self.x
+                    dy = target[1] - self.y
+                    
+                    # 회피 벡터 적용
+                    dx += self.avoidance_vector[0] * 0.3
+                    dy += self.avoidance_vector[1] * 0.3
+                    
+                    dist = (dx ** 2 + dy ** 2) ** 0.5
+                    if dist < self.speed:
+                        self.x, self.y = target
+                        self.path_index -= 1
+                    else:
+                        self.x += self.speed * dx / dist
+                        self.y += self.speed * dy / dist
+            else:
+                self.escaped = True
+    
+    def update_basic(self, path_points, exit_points, all_people, current_time):
+        """기본 탈출 알고리즘"""
+        self.handle_collisions(all_people, current_time)
+        
         # 아직 경로에 합류하지 않았다면 가장 가까운 경로 지점으로 이동
         if not self.joined_path:
             if self.path_index < len(path_points):
@@ -171,6 +361,7 @@ class Person:
                     self.x += self.speed * dx / dist
                     self.y += self.speed * dy / dist
             return
+        
         # 목표 출구 인덱스가 설정되지 않았다면 가장 가까운 EXIT_POINT의 인덱스 찾기
         if self.target_exit_index is None:
             min_dist = float('inf')
@@ -179,6 +370,7 @@ class Person:
                 if dist < min_dist:
                     min_dist = dist
                     self.target_exit_index = i
+        
         # 목표 출구 인덱스에 해당하는 PATH_POINTS 인덱스 찾기
         target_exit = exit_points[self.target_exit_index]
         target_path_index = None
@@ -186,6 +378,7 @@ class Person:
             if (px, py) == target_exit:
                 target_path_index = i
                 break
+        
         # 목표 출구 방향으로 경로 따라 이동
         if target_path_index is not None:
             if self.path_index < target_path_index:
@@ -214,20 +407,74 @@ class Person:
                         self.y += self.speed * dy / dist
             else:
                 self.escaped = True
-    def draw(self, screen):
+    def draw(self, screen, current_time):
         if not self.escaped:
-            # 속도에 따른 색상 변경 (빠를수록 초록색, 느릴수록 빨간색)
-            if self.speed >= 0.16:
-                color = (0, 255, 0)  # 초록색 (빠름)
-            elif self.speed >= 0.12:
-                color = (255, 165, 0)  # 주황색 (보통)
+            # 출구 앞 대기 중이면 파란색
+            if self.waiting_at_exit:
+                color = (0, 0, 255)  # 파란색 (대기)
+            # 충돌 후 1초 동안 빨간색으로 표시
+            elif current_time - self.last_collision_time < self.collision_display_duration:
+                color = (255, 0, 0)  # 빨간색 (충돌 상태)
             else:
-                color = (255, 0, 0)  # 빨간색 (느림)
+                # 속도에 따른 색상 변경 (빠를수록 초록색, 느릴수록 빨간색)
+                if self.speed >= 0.16:
+                    color = (0, 255, 0)  # 초록색 (빠름)
+                elif self.speed >= 0.12:
+                    color = (255, 165, 0)  # 주황색 (보통)
+                else:
+                    color = (255, 0, 0)  # 빨간색 (느림)
             
             pygame.draw.circle(screen, color, (int(self.x), int(self.y)), self.radius)
 
-def spawn_people(num_people_per_seat, left_distances, right_distances, delay_per_rank=2):
+def calculate_optimal_start_delay(seat_idx, distance, total_seats, base_delay=2):
+    """
+    영역별 최적 출발 시간을 계산합니다.
+    
+    Args:
+        seat_idx: 좌석 순위 (0부터 시작)
+        distance: 출구까지의 맨해튼 거리
+        total_seats: 전체 좌석 수
+        base_delay: 기본 지연 시간
+    
+    Returns:
+        최적화된 출발 지연 시간 (초)
+    """
+    if not DYNAMIC_START_OPTIMIZATION:
+        # 고정 지연 시간 사용
+        return seat_idx * base_delay
+    
+    # 거리 기반 기본 지연 시간 (거리가 멀수록 더 늦게 출발)
+    distance_factor = distance / 100  # 거리를 100으로 정규화
+    
+    # 순위 기반 지연 시간 (순위가 높을수록 더 늦게 출발)
+    rank_factor = seat_idx / total_seats  # 순위를 0~1로 정규화
+    
+    # 혼잡도 고려 (중간 순위는 더 늦게 출발하여 혼잡도 분산)
+    congestion_factor = 0
+    if 0.3 <= rank_factor <= 0.7:  # 중간 순위 구간
+        congestion_factor = 1.5  # 50% 추가 지연
+    
+    # 최종 지연 시간 계산
+    optimal_delay = (distance_factor + rank_factor + congestion_factor) * base_delay
+    
+    return max(0, optimal_delay)  # 최소 0초
+
+def spawn_people(num_people_per_seat, left_distances, right_distances, delay_per_rank=2, sequential_escape=True):
+    """
+    관중을 생성합니다.
+    
+    Args:
+        num_people_per_seat: 좌석당 관중 수
+        left_distances: 왼쪽 좌석 거리 정보
+        right_distances: 오른쪽 좌석 거리 정보
+        delay_per_rank: 순위별 지연 시간 (순차 탈출 시에만 사용)
+        sequential_escape: True면 순차 탈출, False면 한번에 탈출
+    """
     people = []
+    
+    # 전체 좌석 수 계산
+    total_left_seats = len(left_distances)
+    total_right_seats = len(right_distances)
     
     # 왼쪽 좌석들 처리
     for seat_idx, (original_index, seat, distance, exit_point) in enumerate(left_distances):
@@ -243,8 +490,14 @@ def spawn_people(num_people_per_seat, left_distances, right_distances, delay_per
                     min_dist = dist
                     min_idx = idx
             
-            # 왼쪽 순위에 따른 지연 시간 계산 (1순위는 0초, 2순위는 2초, 3순위는 4초...)
-            start_delay = seat_idx * delay_per_rank
+            # 탈출 방식에 따른 지연 시간 계산
+            if sequential_escape:
+                # 동적 최적화된 출발 시간 계산
+                start_delay = calculate_optimal_start_delay(seat_idx, distance, total_left_seats, delay_per_rank)
+            else:
+                # 한번에 탈출: 모든 사람이 동시에 출발
+                start_delay = 0
+            
             person = Person(px, py, start_delay)
             person.path_index = min_idx
             people.append(person)
@@ -263,8 +516,14 @@ def spawn_people(num_people_per_seat, left_distances, right_distances, delay_per
                     min_dist = dist
                     min_idx = idx
             
-            # 오른쪽 순위에 따른 지연 시간 계산 (1순위는 0초, 2순위는 2초, 3순위는 4초...)
-            start_delay = seat_idx * delay_per_rank
+            # 탈출 방식에 따른 지연 시간 계산
+            if sequential_escape:
+                # 동적 최적화된 출발 시간 계산
+                start_delay = calculate_optimal_start_delay(seat_idx, distance, total_right_seats, delay_per_rank)
+            else:
+                # 한번에 탈출: 모든 사람이 동시에 출발
+                start_delay = 0
+            
             person = Person(px, py, start_delay)
             person.path_index = min_idx
             people.append(person)
@@ -292,6 +551,15 @@ def print_click_pos(event):
 # 화면 크기 설정 (예시: 1200x800)
 WIDTH, HEIGHT = 1200, 800
 
+# 탈출 방식 설정 (True: 순차 탈출, False: 한번에 탈출)
+SEQUENTIAL_ESCAPE = True
+
+# 최적화 탈출 알고리즘 설정 (True: 최적화 탈출, False: 기본 탈출)
+OPTIMIZED_ESCAPE = True
+
+# 동적 출발 시간 최적화 설정 (True: 동적 최적화, False: 고정 지연)
+DYNAMIC_START_OPTIMIZATION = True
+
 def main():
     pygame.init()
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -314,13 +582,18 @@ def main():
     clock = pygame.time.Clock()
     running = True
     
-    # 관중 생성 (각 좌석마다 10명, 좌우 순위별로 5초씩 지연)
-    people = spawn_people(10, left_distances, right_distances, 5)
+    # 관중 생성 (각 좌석마다 10명, 탈출 방식에 따라 지연 시간 결정)
+    people = spawn_people(10, left_distances, right_distances, 3, SEQUENTIAL_ESCAPE)
     
     # 탈출 시간 측정 변수
     start_time = pygame.time.get_ticks()
     escape_time = None
     all_escaped = False
+
+    # 출구별 대기열 및 타이머
+    exit_queues = [[] for _ in range(len(EXIT_POINTS))]
+    exit_last_tick = [pygame.time.get_ticks() for _ in range(len(EXIT_POINTS))]
+    exit_current_count = [0 for _ in range(len(EXIT_POINTS))]
 
     # 문제 원인: 클릭 좌표를 출력하는 print_click_pos 함수가 main 루프에서 호출되지 않음
     # 해결: 이벤트 루프에서 MOUSEBUTTONDOWN 이벤트 발생 시 print_click_pos 호출
@@ -339,11 +612,46 @@ def main():
         # 좌석 점들을 그리기
         draw_seat_points(screen)
         
+        # 출구별 대기열 카운트 리셋 (1초마다)
+        for i in range(len(EXIT_POINTS)):
+            if pygame.time.get_ticks() - exit_last_tick[i] >= 1000:
+                exit_current_count[i] = 0
+                exit_last_tick[i] = pygame.time.get_ticks()
+
         # 관중들 업데이트 및 그리기
         current_time = pygame.time.get_ticks()
         for person in people:
+            if person.escaped:
+                person.draw(screen, current_time)
+                continue
+
+            # 출구 앞에 도달했는지 체크
+            if person.target_exit_index is not None:
+                ex, ey = EXIT_POINTS[person.target_exit_index]
+                dist_to_exit = ((person.x - ex) ** 2 + (person.y - ey) ** 2) ** 0.5
+                if dist_to_exit < 2:  # 출구 앞에 도달
+                    person.waiting_at_exit = True
+                    if person not in exit_queues[person.target_exit_index]:
+                        exit_queues[person.target_exit_index].append(person)
+                    # 충돌 체크는 반드시 실행
+                    person.handle_collisions(people, current_time)
+                    person.draw(screen, current_time)
+                    continue  # 대기 중이므로 update/draw만
+                else:
+                    person.waiting_at_exit = False
+
+            # 평소처럼 이동
             person.update(PATH_POINTS, EXIT_POINTS, people, current_time)
-            person.draw(screen)
+            person.draw(screen, current_time)
+
+        # 출구별로 1초에 5명씩만 탈출 허용
+        for exit_idx, queue in enumerate(exit_queues):
+            allowed = 5 - exit_current_count[exit_idx]
+            to_escape = queue[:allowed]
+            for p in to_escape:
+                p.escaped = True
+                queue.remove(p)
+                exit_current_count[exit_idx] += 1
 
         # 모든 관중이 탈출했는지 확인
         alive_count = sum(not p.escaped for p in people)
@@ -355,6 +663,21 @@ def main():
         font = pygame.font.Font(None, 36)
         text = font.render(f'# of people: {alive_count}', True, (0, 0, 0))
         screen.blit(text, (20, 20))
+        
+        # 탈출 방식 표시
+        escape_mode = "Sequential" if SEQUENTIAL_ESCAPE else "Simultaneous"
+        mode_text = font.render(f'Escape Mode: {escape_mode}', True, (0, 0, 255))
+        screen.blit(mode_text, (20, 140))
+        
+        # 최적화 모드 표시
+        optimization_mode = "Optimized" if OPTIMIZED_ESCAPE else "Basic"
+        opt_text = font.render(f'Algorithm: {optimization_mode}', True, (0, 128, 0))
+        screen.blit(opt_text, (20, 180))
+        
+        # 동적 최적화 모드 표시
+        dynamic_mode = "Dynamic" if DYNAMIC_START_OPTIMIZATION else "Fixed"
+        dynamic_text = font.render(f'Start Time: {dynamic_mode}', True, (128, 0, 128))
+        screen.blit(dynamic_text, (20, 220))
         
         # 경과 시간 표시 (탈출 완료 시에는 멈춤)
         if not all_escaped:
