@@ -1,4 +1,17 @@
 import pygame
+import random
+
+# ====== 시뮬레이션 옵션 ======
+# True: 순차 탈출, False: 한번에 탈출
+SEQUENTIAL_ESCAPE = False
+# True: 최적화 탈출 알고리즘, False: 기본 탈출
+OPTIMIZED_ESCAPE = False
+# True: 동적 출발 시간 최적화, False: 고정 지연
+DYNAMIC_START_OPTIMIZATION = True
+# 출구별 1초당 탈출 허용 인원
+QUEUE_EXIT_PER_SECOND = 3
+# ===========================
+
 # 관객 생성 좌표를 점으로 시각화하기 위한 코드 예시:
 SEAT_POINTS = [
     (937, 343), (937, 369), (937, 402), (931, 431), (920, 457), (915, 485),
@@ -107,13 +120,11 @@ def draw_seat_points(screen):
     for x, y in SEAT_POINTS:
         pygame.draw.circle(screen, (128, 128, 128), (int(x), int(y)), 3)
 
-import random
-
 class Person:
     def __init__(self, x, y, start_delay=0):
         self.x = x
         self.y = y
-        self.radius = 5
+        self.radius = 4
         self.color = (255, 100, 0)
         self.original_speed = 0.2  # 픽셀당 속도를 0.2로 설정
         self.speed = self.original_speed  # 현재 속도
@@ -551,14 +562,6 @@ def print_click_pos(event):
 # 화면 크기 설정 (예시: 1200x800)
 WIDTH, HEIGHT = 1200, 800
 
-# 탈출 방식 설정 (True: 순차 탈출, False: 한번에 탈출)
-SEQUENTIAL_ESCAPE = True
-
-# 최적화 탈출 알고리즘 설정 (True: 최적화 탈출, False: 기본 탈출)
-OPTIMIZED_ESCAPE = True
-
-# 동적 출발 시간 최적화 설정 (True: 동적 최적화, False: 고정 지연)
-DYNAMIC_START_OPTIMIZATION = True
 
 def main():
     pygame.init()
@@ -646,7 +649,7 @@ def main():
 
         # 출구별로 1초에 5명씩만 탈출 허용
         for exit_idx, queue in enumerate(exit_queues):
-            allowed = 5 - exit_current_count[exit_idx]
+            allowed = QUEUE_EXIT_PER_SECOND - exit_current_count[exit_idx]
             to_escape = queue[:allowed]
             for p in to_escape:
                 p.escaped = True
