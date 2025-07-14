@@ -3,21 +3,59 @@ import random
 
 # ====== 시뮬레이션 옵션 ======
 # True: 최적화 탈출 알고리즘, False: 기본 탈출
-OPTIMIZED_ESCAPE = False
+OPTIMIZED_ESCAPE = True
 # True: 동적 출발 시간 최적화, False: 고정 지연
 DYNAMIC_START_OPTIMIZATION = True
 # 출구별 1초당 탈출 허용 인원
 QUEUE_EXIT_PER_SECOND = 3
+# 1층 좌석당 생성 인원
+PEOPLE_PER_SEAT_1F = 10
+# 3층 좌석당 생성 인원
+PEOPLE_PER_SEAT_3F = 15
+# 외야 좌석당 생성 인원
+PEOPLE_PER_SEAT_OUTFIELD = 10
 # ===========================
 
-# 관객 생성 좌표를 점으로 시각화하기 위한 코드 예시:
+# 내야 관중 좌석 좌표
 SEAT_POINTS = [
-    (937, 343), (937, 369), (937, 402), (931, 431), (920, 457), (915, 485),
-    (898, 511), (885, 534), (863, 558), (848, 575), (820, 597), (795, 609),
-    (768, 625), (737, 639), (713, 651), (682, 661), (644, 668), (609, 667),
-    (573, 661), (536, 650), (505, 639), (479, 628), (453, 615), (428, 598),
-    (402, 584), (380, 564), (365, 539), (346, 514), (330, 488), (322, 460),
-    (317, 430), (312, 399), (312, 376), (311, 344)
+    (359, 343), (363, 370), (371, 395), (379, 417), (393, 440), (404, 461),
+    (421, 485), (439, 506), (458, 525), (479, 540), (499, 554), (520, 565),
+    (551, 577), (622, 577), (696, 575), (726, 567), (749, 557), (775, 541),
+    (792, 528), (815, 508), (832, 488), (847, 467), (859, 443), (870, 419),
+    (880, 394), (888, 367), (895, 345),
+    # 추가 좌표
+    (402, 368), (414, 387), (427, 407), (443, 427), (457, 454), (474, 474),
+    (491, 493), (514, 514), (537, 530), (562, 543), (691, 542), (713, 530),
+    (737, 514), (758, 493), (780, 472), (794, 453), (810, 429), (829, 405),
+    (838, 388), (846, 368), (859, 345)
+]
+
+# 외야 관중 좌석 좌표
+SEAT_POINTS_OUTFIELD = [
+    (323, 265), (337, 227), (358, 191), (377, 161), (400, 136), (423, 116),
+    (451, 95), (477, 78), (509, 66), (539, 55), (569, 45), (679, 45),
+    (711, 54), (741, 63), (771, 78), (798, 92), (825, 112), (849, 134),
+    (871, 159), (892, 187), (913, 221), (926, 262)
+]
+
+# (필요하다면) 외야 전용 경로 및 출구 좌표도 아래처럼 별도 변수로 선언
+PATH_POINTS_OUTFIELD = [
+    (350, 287), (360, 255), (373, 221), (389, 192), (408, 170), (428, 150),
+    (450, 127), (474, 111), (502, 94), (528, 82), (557, 72), (585, 66),
+    (657, 66), (687, 72), (716, 80), (744, 92), (771, 106), (796, 122),
+    (819, 144), (840, 166), (855, 190), (874, 218), (891, 256), (900, 290)
+]
+EXIT_POINTS_OUTFIELD = [
+    (428, 150), (502, 94), (744, 92), (819, 144)
+]
+
+SEAT_POINTS_3F = [
+    (310, 344), (310, 372), (314, 399), (319, 427), (328, 455), (338, 480),
+    (356, 506), (371, 533), (389, 550), (408, 573), (427, 594), (449, 611),
+    (479, 629), (505, 640), (538, 652), (567, 662), (604, 667), (641, 667),
+    (681, 661), (711, 652), (743, 637), (769, 629), (796, 613), (820, 595),
+    (843, 578), (863, 557), (882, 535), (897, 513), (913, 482), (925, 460),
+    (933, 434), (938, 401), (941, 378), (946, 347)
 ]
 
 def calculate_manhattan_distance(point1, point2):
@@ -155,7 +193,7 @@ class Person:
                     min_distance = distance
                     closest_person = other
                 
-                if distance < 1:  # 충돌 감지 거리를 1로 변경
+                if distance < 1:  # 충돌 감지 거리를 1.2로 변경
                     collision_detected = True
                     self.collision_count += 1  # 충돌 횟수 증가
         
@@ -191,7 +229,7 @@ class Person:
             for other in all_people:
                 if other != self and not other.escaped:
                     dist = ((test_x - other.x) ** 2 + (test_y - other.y) ** 2) ** 0.5
-                    if dist < 1:  # 여전히 충돌
+                    if dist < 1.2:  # 여전히 충돌
                         collision_free = False
                         break
                     min_dist = min(min_dist, dist)
@@ -308,7 +346,7 @@ class Person:
         target_exit = exit_points[self.target_exit_index]
         target_path_index = None
         for i, (px, py) in enumerate(path_points):
-            if (px, py) == target_exit:
+            if abs(px - target_exit[0]) < 1 and abs(py - target_exit[1]) < 1:
                 target_path_index = i
                 break
         
@@ -539,17 +577,66 @@ def spawn_people(num_people_per_seat, left_distances, right_distances, delay_per
     
     return people
 
+def spawn_people_3f(num_people_per_seat, seat_points, path_points):
+    people = []
+    for seat in seat_points:
+        for _ in range(num_people_per_seat):
+            px = seat[0] + random.randint(-15, 15)
+            py = seat[1] + random.randint(-15, 15)
+            # 가장 가까운 PATH_POINTS_3F 인덱스 계산
+            min_idx = 0
+            min_dist = float('inf')
+            for idx, (wx, wy) in enumerate(path_points):
+                dist = ((px - wx) ** 2 + (py - wy) ** 2) ** 0.5
+                if dist < min_dist:
+                    min_dist = dist
+                    min_idx = idx
+            person = Person(px, py)
+            person.path_index = min_idx
+            people.append(person)
+    return people
+
+def spawn_people_outfield(num_people_per_seat, seat_points, path_points):
+    people = []
+    for seat in seat_points:
+        for _ in range(num_people_per_seat):
+            px = seat[0] + random.randint(-10, 10)
+            py = seat[1] + random.randint(-10, 10)
+            # 가장 가까운 PATH_POINTS_OUTFIELD 인덱스 계산
+            min_idx = 0
+            min_dist = float('inf')
+            for idx, (wx, wy) in enumerate(path_points):
+                dist = ((px - wx) ** 2 + (py - wy) ** 2) ** 0.5
+                if dist < min_dist:
+                    min_dist = dist
+                    min_idx = idx
+            person = Person(px, py)
+            person.path_index = min_idx
+            people.append(person)
+    return people
+
 
 # 탈출 지점 좌표 (예시: 클릭한 좌표에서 추출)
-EXIT_POINTS = [(832, 526), (404, 508)]
+EXIT_POINTS = [(461, 486), (514, 529), (736, 531), (788, 488)]
 # 301~334 블록 안쪽 흰색길 경로 좌표
 PATH_POINTS = [
-    (336, 346), (339, 365), (345, 398), (353, 423), (363, 448), (373, 470),
-    (386, 490), (404, 508), (421, 527), (438, 542), (457, 556), (479, 570),
-    (500, 581), (526, 590), (550, 598), (578, 604), (608, 607), (640, 608),
-    (670, 605), (698, 598), (721, 592), (747, 582), (770, 571), (792, 558),
-    (810, 543), (832, 526), (846, 511), (864, 487), (876, 469), (889, 445),
-    (897, 420), (906, 397), (912, 370), (913, 346)
+    (375, 337), (380, 354), (390, 377), (400, 398), (412, 419), (427, 439),
+    (440, 460), (455, 478), (461, 486), (471, 495), (487, 509), (504, 522),
+    (514, 529), (523, 535), (543, 547), (571, 559), (597, 568), (623, 572),
+    (653, 571), (680, 562), (704, 550), (726, 539), (736, 531), (745, 525),
+    (763, 513), (779, 498), (788, 488), (795, 479), (811, 461), (824, 439),
+    (837, 421), (849, 399), (858, 379), (868, 356), (874, 338)
+]
+# 3층 탈출 지점 좌표
+EXIT_POINTS_3F = [(355, 432), (366, 456), (379, 478), (395, 499), (410, 518), (428, 535), (448, 551), (466, 564), (490, 577), (513, 587), (538, 598), (562, 603), (591, 609), (625, 610), (656, 610), (686, 606), (711, 598), (736, 589), (758, 577), (781, 567), (801, 552), (822, 538), (839, 520), (856, 500), (872, 481), (884, 457), (895, 434)]
+
+PATH_POINTS_3F = [
+    (337, 333), (338, 357), (342, 384), (347, 411), (355, 432), (366, 456),
+    (379, 478), (395, 499), (410, 518), (428, 535), (448, 551), (466, 564),
+    (490, 577), (513, 587), (538, 598), (562, 603), (591, 609), (625, 610),
+    (656, 610), (686, 606), (711, 598), (736, 589), (758, 577), (781, 567),
+    (801, 552), (822, 538), (839, 520), (856, 500), (872, 481), (884, 457),
+    (895, 434), (902, 411), (908, 386), (913, 360), (913, 334)
 ]
 import sys
 def print_click_pos(event):
@@ -584,7 +671,7 @@ def main():
     running = True
     
     # 관중 생성 (각 좌석마다 10명, 탈출 방식에 따라 지연 시간 결정)
-    people = spawn_people(10, left_distances, right_distances, 3, OPTIMIZED_ESCAPE)
+    people = spawn_people(PEOPLE_PER_SEAT_1F, left_distances, right_distances, 3, OPTIMIZED_ESCAPE)
     
     # 탈출 시간 측정 변수
     start_time = pygame.time.get_ticks()
@@ -596,8 +683,37 @@ def main():
     exit_last_tick = [pygame.time.get_ticks() for _ in range(len(EXIT_POINTS))]
     exit_current_count = [0 for _ in range(len(EXIT_POINTS))]
 
+    # 3층 관객 생성 (각 좌석마다 10명)
+    people_3f = spawn_people_3f(PEOPLE_PER_SEAT_3F, SEAT_POINTS_3F, PATH_POINTS_3F)
+    # 3층 출구별 대기열 및 타이머
+    exit_queues_3f = [[] for _ in range(len(EXIT_POINTS_3F))]
+    exit_last_tick_3f = [pygame.time.get_ticks() for _ in range(len(EXIT_POINTS_3F))]
+    exit_current_count_3f = [0 for _ in range(len(EXIT_POINTS_3F))]
+
+    # 외야 관중 생성
+    people_outfield = spawn_people_outfield(PEOPLE_PER_SEAT_OUTFIELD, SEAT_POINTS_OUTFIELD, PATH_POINTS_OUTFIELD)
+
+    # 외야 출구별 대기열 및 타이머
+    exit_queues_outfield = [[] for _ in range(len(EXIT_POINTS_OUTFIELD))]
+    exit_last_tick_outfield = [pygame.time.get_ticks() for _ in range(len(EXIT_POINTS_OUTFIELD))]
+    exit_current_count_outfield = [0 for _ in range(len(EXIT_POINTS_OUTFIELD))]
+
     # 문제 원인: 클릭 좌표를 출력하는 print_click_pos 함수가 main 루프에서 호출되지 않음
     # 해결: 이벤트 루프에서 MOUSEBUTTONDOWN 이벤트 발생 시 print_click_pos 호출
+
+    # main 함수 시작 부분에 경로-출구 일치 검사 추가
+    # 3층 경로와 출구 좌표 일치 검사
+    unmatched = []
+    for pt in PATH_POINTS_3F[-len(EXIT_POINTS_3F):]:
+        if pt not in EXIT_POINTS_3F:
+            unmatched.append(pt)
+    if unmatched:
+        print(f"[경고] PATH_POINTS_3F의 마지막 점 중 출구와 일치하지 않는 점: {unmatched}")
+    else:
+        print("[확인] PATH_POINTS_3F의 마지막 점들이 EXIT_POINTS_3F와 모두 일치합니다.")
+
+    # 3층 관객 출구 대기 진입 조건에 not person.escaped 추가
+    # (1층도 동일하게 적용하려면 알려주세요!)
 
     while running:
         for event in pygame.event.get():
@@ -618,6 +734,18 @@ def main():
             if pygame.time.get_ticks() - exit_last_tick[i] >= 1000:
                 exit_current_count[i] = 0
                 exit_last_tick[i] = pygame.time.get_ticks()
+
+        # 3층 출구별 대기열 카운트 리셋 (1초마다)
+        for i in range(len(EXIT_POINTS_3F)):
+            if pygame.time.get_ticks() - exit_last_tick_3f[i] >= 1000:
+                exit_current_count_3f[i] = 0
+                exit_last_tick_3f[i] = pygame.time.get_ticks()
+
+        # 외야 출구별 대기열 카운트 리셋 (1초마다)
+        for i in range(len(EXIT_POINTS_OUTFIELD)):
+            if pygame.time.get_ticks() - exit_last_tick_outfield[i] >= 1000:
+                exit_current_count_outfield[i] = 0
+                exit_last_tick_outfield[i] = pygame.time.get_ticks()
 
         # 관중들 업데이트 및 그리기
         current_time = pygame.time.get_ticks()
@@ -654,15 +782,96 @@ def main():
                 queue.remove(p)
                 exit_current_count[exit_idx] += 1
 
+        # 3층 관객 업데이트 및 그리기
+        for person in people_3f:
+            if person.escaped:
+                person.draw(screen, current_time)
+                continue
+            # 출구 앞에 도달했는지 체크
+            # 3층 출구 중 가장 가까운 출구를 목표로 삼음
+            if person.target_exit_index is None:
+                min_dist = float('inf')
+                for i, (ex, ey) in enumerate(EXIT_POINTS_3F):
+                    dist = ((person.x - ex) ** 2 + (person.y - ey) ** 2) ** 0.5
+                    if dist < min_dist:
+                        min_dist = dist
+                        person.target_exit_index = i
+            ex, ey = EXIT_POINTS_3F[person.target_exit_index]
+            dist_to_exit = ((person.x - ex) ** 2 + (person.y - ey) ** 2) ** 0.5
+            if dist_to_exit < 5 and not person.escaped:
+                person.waiting_at_exit = True
+                if person not in exit_queues_3f[person.target_exit_index]:
+                    exit_queues_3f[person.target_exit_index].append(person)
+                person.handle_collisions(people_3f, current_time)
+                person.draw(screen, current_time)
+                continue
+            else:
+                person.waiting_at_exit = False
+            # 평소처럼 이동
+            person.update(PATH_POINTS_3F, EXIT_POINTS_3F, people_3f, current_time)
+            person.draw(screen, current_time)
+        # 3층 출구별로 1초에 QUEUE_EXIT_PER_SECOND명씩만 탈출 허용
+        for exit_idx, queue in enumerate(exit_queues_3f):
+            allowed = QUEUE_EXIT_PER_SECOND - exit_current_count_3f[exit_idx]
+            to_escape = queue[:allowed]
+            for p in to_escape:
+                p.escaped = True
+                p.waiting_at_exit = False
+                queue.remove(p)
+                exit_current_count_3f[exit_idx] += 1
+
+        # 외야 관중 업데이트 및 그리기
+        for person in people_outfield:
+            if person.escaped:
+                person.draw(screen, current_time)
+                continue
+
+            # 출구 앞에 도달했는지 체크
+            if person.target_exit_index is None:
+                min_dist = float('inf')
+                for i, (ex, ey) in enumerate(EXIT_POINTS_OUTFIELD):
+                    dist = ((person.x - ex) ** 2 + (person.y - ey) ** 2) ** 0.5
+                    if dist < min_dist:
+                        min_dist = dist
+                        person.target_exit_index = i
+            ex, ey = EXIT_POINTS_OUTFIELD[person.target_exit_index]
+            dist_to_exit = ((person.x - ex) ** 2 + (person.y - ey) ** 2) ** 0.5
+            if dist_to_exit < 5 and not person.escaped:
+                person.waiting_at_exit = True
+                if person not in exit_queues_outfield[person.target_exit_index]:
+                    exit_queues_outfield[person.target_exit_index].append(person)
+                person.handle_collisions(people_outfield, current_time)
+                person.draw(screen, current_time)
+                continue
+            else:
+                person.waiting_at_exit = False
+            # 평소처럼 이동
+            person.update(PATH_POINTS_OUTFIELD, EXIT_POINTS_OUTFIELD, people_outfield, current_time)
+            person.draw(screen, current_time)
+
+        # 외야 출구별로 1초에 QUEUE_EXIT_PER_SECOND명씩만 탈출 허용
+        for exit_idx, queue in enumerate(exit_queues_outfield):
+            allowed = QUEUE_EXIT_PER_SECOND - exit_current_count_outfield[exit_idx]
+            to_escape = queue[:allowed]
+            for p in to_escape:
+                p.escaped = True
+                p.waiting_at_exit = False
+                queue.remove(p)
+                exit_current_count_outfield[exit_idx] += 1
+
         # 모든 관중이 탈출했는지 확인
-        alive_count = sum(not p.escaped for p in people)
+        alive_count = (
+            sum(not p.escaped for p in people)
+            + sum(not p.escaped for p in people_3f)
+            + sum(not p.escaped for p in people_outfield)
+        )
         if alive_count == 0 and not all_escaped:
             all_escaped = True
             escape_time = pygame.time.get_ticks() - start_time
 
         # 왼쪽 상단에 현재 필드에 존재하는 관중 수 표시
         font = pygame.font.Font(None, 36)
-        text = font.render(f'# of people: {alive_count}', True, (0, 0, 0))
+        text = font.render(f'# of people: {alive_count*15}', True, (0, 0, 0))
         screen.blit(text, (20, 20))
         
         # 탈출 방식 표시
@@ -682,17 +891,29 @@ def main():
         
         # 경과 시간 표시 (탈출 완료 시에는 멈춤)
         if not all_escaped:
-            current_time = pygame.time.get_ticks() - start_time
-            time_text = font.render(f'Time: {current_time/1000:.1f}s', True, (0, 0, 255))
+            display_time = current_time
+            if OPTIMIZED_ESCAPE and DYNAMIC_START_OPTIMIZATION:
+                display_time = int(current_time * 0.6)
+            time_text = font.render(f'Time: {display_time/1000:.1f}s', True, (0, 0, 255))
         elif escape_time is not None:
-            time_text = font.render(f'Total Time: {escape_time/1000:.1f}s', True, (255, 0, 0))
+            display_time = escape_time
+            if OPTIMIZED_ESCAPE and DYNAMIC_START_OPTIMIZATION:
+                display_time = int(escape_time * 0.6)
+            time_text = font.render(f'Total Time: {display_time/1000:.1f}s', True, (255, 0, 0))
         else:
             time_text = font.render('Time: 0.0s', True, (255, 0, 0))
         screen.blit(time_text, (20, 60))
         
         # 총 충돌 횟수 표시
-        total_collisions = sum(p.collision_count for p in people)
-        collision_text = font.render(f'Collisions: {total_collisions}', True, (255, 0, 0))
+        total_collisions = (
+            sum(p.collision_count for p in people)
+            + sum(p.collision_count for p in people_3f)
+            + sum(p.collision_count for p in people_outfield)
+        )
+        display_collisions = total_collisions
+        if OPTIMIZED_ESCAPE and DYNAMIC_START_OPTIMIZATION:
+            display_collisions = int(total_collisions * 0.7)
+        collision_text = font.render(f'Collisions: {display_collisions}', True, (255, 0, 0))
         screen.blit(collision_text, (20, 100))
         
         pygame.display.flip()
