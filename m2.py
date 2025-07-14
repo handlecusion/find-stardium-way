@@ -2,8 +2,6 @@ import pygame
 import random
 
 # ====== 시뮬레이션 옵션 ======
-# True: 순차 탈출, False: 한번에 탈출
-SEQUENTIAL_ESCAPE = False
 # True: 최적화 탈출 알고리즘, False: 기본 탈출
 OPTIMIZED_ESCAPE = False
 # True: 동적 출발 시간 최적화, False: 고정 지연
@@ -586,7 +584,7 @@ def main():
     running = True
     
     # 관중 생성 (각 좌석마다 10명, 탈출 방식에 따라 지연 시간 결정)
-    people = spawn_people(10, left_distances, right_distances, 3, SEQUENTIAL_ESCAPE)
+    people = spawn_people(10, left_distances, right_distances, 3, OPTIMIZED_ESCAPE)
     
     # 탈출 시간 측정 변수
     start_time = pygame.time.get_ticks()
@@ -668,7 +666,7 @@ def main():
         screen.blit(text, (20, 20))
         
         # 탈출 방식 표시
-        escape_mode = "Sequential" if SEQUENTIAL_ESCAPE else "Simultaneous"
+        escape_mode = "Sequential" if OPTIMIZED_ESCAPE else "Simultaneous"
         mode_text = font.render(f'Escape Mode: {escape_mode}', True, (0, 0, 255))
         screen.blit(mode_text, (20, 140))
         
